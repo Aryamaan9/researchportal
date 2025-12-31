@@ -1,0 +1,345 @@
+===========================================
+MONEY STORIES RESEARCH VAULT
+PHASE 1: FOUNDATIONAL INTELLIGENCE LAYER
+
+ROLE AND RULES FOR THE REPLIT AGENT
+You are building an internal research intelligence platform for Money Stories.
+
+Non-negotiables:
+
+Grounded AI only: answers must use only uploaded documents.
+
+Citations are mandatory: every answer must include source and page when possible.
+
+If evidence is insufficient, say so explicitly. Do not guess.
+
+Build Phase 1 only. Do not add Phase 2+ features.
+
+Keep UI minimal, professional, calm. No consumer styling, no hype.
+
+Avoid em dashes anywhere.
+
+First output required (before coding):
+
+Summarize architecture and execution plan in 12–15 bullets.
+
+List Phase 1A deliverables and Phase 1B deliverables.
+
+List any environment constraints and your fallback plan.
+
+===========================================
+PROJECT OVERVIEW
+
+Purpose:
+An internal AI-augmented research system to ingest unstructured financial documents (annual reports, concalls, industry reports, investor updates, research notes) and enable:
+
+extraction and indexing
+
+summaries
+
+semantic and keyword search
+
+citation-backed Q&A across all material
+
+Phase 1 is the Foundational Intelligence Layer: ingestion, OCR and extraction, classification, summaries, semantic search, Q&A with citations, and a basic viewer with AI panel. 
+
+Proposal Document - MoneyStorie…
+
+Target users:
+
+non-technical research analysts
+
+fund managers
+
+===========================================
+DATA REALITY
+
+Documents are messy:
+
+PDFs with multi-column layouts, headers and footers, tables
+
+scanned PDFs and images requiring OCR
+
+mixed formats: PDF, DOCX, XLSX, CSV, JPG, PNG
+
+inconsistent naming and overlapping content
+
+System must store:
+
+original file
+
+extracted text
+
+chunked text with traceability (document, chunk index, page)
+
+===========================================
+PHASE 1 SCOPE
+
+Phase 1A: Intelligence core that must work end-to-end
+Must build:
+
+Authentication: internal login (admin + user). No public signup.
+
+Document upload: batch upload, max 50MB per file, progress and status.
+
+Processing pipeline:
+
+Extract text from PDF (PyMuPDF preferred)
+
+Detect scanned documents and run OCR (Tesseract) when needed
+
+Extract per-page text and store it
+
+Classify document type using Claude
+
+Generate document summary and page summaries using Claude
+
+Chunk text for search and embeddings (paragraph-aware, overlap)
+
+Storage: Postgres preferred.
+
+Search:
+
+Keyword search using Postgres full-text search
+
+Semantic search using embeddings plus pgvector if available
+
+Hybrid merge and rerank results
+Fallback rule: if pgvector is not available, ship Phase 1A using full-text search only, but keep the code structure ready for embeddings later.
+
+Q&A:
+
+Retrieve top 5–10 chunks using hybrid retrieval
+
+Ask Claude to answer using only those excerpts
+
+Inline citations like [Document Title, Page X]
+
+If not enough evidence, respond with: “I cannot answer this based on the uploaded documents.” and show the closest excerpts.
+
+Phase 1B: Minimal viewer and minimal entity exploration
+Must build:
+
+Document viewer for PDFs using pdf.js
+
+AI panel with tabs:
+
+Summary
+
+Entities (if extraction is implemented)
+
+Ask AI (scoped to this document)
+
+Page insight (current page summary)
+
+Clickable citations that jump to the cited page if page is known.
+
+Explicitly not in Phase 1:
+
+financial modeling, ratios, dashboards, screeners
+
+alerts, automation
+
+collaboration workflows beyond login
+
+portfolio analytics
+
+Success criteria:
+
+Upload 50–100 documents
+
+95% processing success rate
+
+Semantic search returns relevant results in top 5 for most queries
+
+Q&A returns citations in 95% of answers, and citations match real text
+
+Analysts can use it daily
+
+===========================================
+MINIMUM DATABASE SCHEMA
+
+Implement migrations.
+
+Tables:
+documents:
+
+id, title, original_filename, file_path, file_size_bytes, file_type
+
+upload_date, processed_date, processing_status, error_message
+
+document_type, full_text, page_count
+
+author, publication_date, source
+
+ai_summary, key_topics, sentiment
+
+document_pages:
+
+id, document_id, page_number, page_text, page_summary
+
+unique(document_id, page_number)
+
+embeddings:
+
+id, document_id, page_number nullable, chunk_text, chunk_index, token_count
+
+embedding vector (if pgvector available)
+
+created_at
+
+entities and document_entities are optional for Phase 1A, but required by end of Phase 1B:
+entities:
+
+id, name, entity_type, normalized_name, metadata jsonb
+document_entities:
+
+document_id, entity_id, mention_count, relevance_score, sentiment, key_quotes
+
+Indexes:
+
+full-text index on extracted text or chunks
+
+vector index if pgvector is used
+
+indexes for filters: document_type, publication_date
+
+===========================================
+LLM PROMPTS
+
+Classification prompt:
+Classify this document as one of: annual_report, quarterly_earnings, concall_transcript, industry_report, research_note, investor_presentation, regulatory_filing, other.
+Also extract: publication_date, author or source, primary companies mentioned.
+Return JSON only.
+
+Summary prompt:
+Provide a 3-paragraph executive summary, then:
+
+5–7 key themes
+
+top 3 risks
+
+top 3 opportunities
+
+overall sentiment
+Professional, precise, actionable.
+Return JSON only.
+
+Q&A prompt:
+Answer the user question using only the provided excerpts.
+Cite sources inline like [Document Title, Page X].
+If insufficient evidence, say you cannot answer from uploaded documents.
+Return answer plus a citations list.
+
+===========================================
+API ENDPOINTS
+
+Documents:
+
+POST /api/documents/upload
+
+GET /api/documents
+
+GET /api/documents/{id}
+
+GET /api/documents/{id}/status
+
+DELETE /api/documents/{id}
+
+Search:
+
+POST /api/search (hybrid search, filters)
+
+Q&A:
+
+POST /api/qa/ask
+
+GET /api/qa/history
+
+Entities (Phase 1B):
+
+GET /api/entities
+
+GET /api/entities/{id}
+
+GET /api/entities/{id}/documents
+
+PUT /api/entities/{id} for merge or edit
+
+===========================================
+UI PAGES
+
+Keep minimal:
+
+Upload page (batch upload, statuses)
+
+Documents list page (filters: type, date, status)
+
+Search and Ask page (search, Q&A, citations)
+
+Document viewer page (pdf.js plus AI panel)
+
+===========================================
+ERROR HANDLING
+
+Must handle:
+
+corrupt files
+
+password-protected PDFs (prompt, do not store password)
+
+OCR failures with fallback
+
+AI rate limits with queue and retries
+
+processing failures with clear error messages
+
+===========================================
+TESTING
+
+Create python test_phase1.py that:
+
+uploads 5 sample docs
+
+waits for processing completion
+
+asserts extracted text exists
+
+asserts summary exists
+
+asserts search returns results for 10 queries
+
+asserts Q&A returns citations for 5 questions
+
+outputs a short test report
+
+===========================================
+ENVIRONMENT VARIABLES
+
+DATABASE_URL
+ANTHROPIC_API_KEY
+OPENAI_API_KEY (for embeddings)
+SECRET_KEY
+ADMIN_EMAIL
+ADMIN_PASSWORD
+
+===========================================
+BUILD INSTRUCTIONS
+
+Proceed in this order:
+
+Database and migrations
+
+Upload and file storage
+
+Processing pipeline
+
+Search
+
+Q&A with citations
+
+Viewer and AI panel
+
+After each step, output what changed and how to test.
+
+END OF SPEC
