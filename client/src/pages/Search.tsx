@@ -83,6 +83,7 @@ export default function SearchPage() {
   const handleAsk = (e: React.FormEvent) => {
     e.preventDefault();
     if (question.trim()) {
+      setQaResponse(null); // Clear old response to force fresh render
       qaMutation.mutate(question);
     }
   };
@@ -211,42 +212,47 @@ export default function SearchPage() {
           )}
 
           {qaResponse && !qaMutation.isPending && (
-            <Card>
-              <CardHeader>
+            <Card className="border-primary/20 shadow-sm min-h-[200px] overflow-visible">
+              <CardHeader className="bg-primary/5 border-b">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <BookOpen className="h-5 w-5" />
+                  <BookOpen className="h-5 w-5 text-primary" />
                   Answer
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="prose prose-sm max-w-none dark:prose-invert" data-testid="text-answer">
+              <CardContent className="p-6 opacity-100 visible">
+                <div className="prose prose-sm max-w-none dark:prose-invert block" data-testid="text-answer">
                   {qaResponse.insufficientEvidence ? (
-                    <div className="p-4 rounded-lg bg-muted border border-dashed border-muted-foreground/20">
-                      <p className="text-sm text-muted-foreground">
-                        I cannot answer this question based on the uploaded documents. 
-                        The available information may not be sufficient or relevant to your query.
+                    <div className="flex flex-col gap-3 p-4 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 block mb-4">
+                      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-400 font-medium">
+                        <Sparkles className="h-4 w-4" />
+                        Insufficient Information
+                      </div>
+                      <p className="text-sm text-amber-700 dark:text-amber-300">
+                        {qaResponse.answer || "I cannot answer this question based on the uploaded documents."}
                       </p>
                     </div>
                   ) : (
-                    <p className="whitespace-pre-wrap">{qaResponse.answer}</p>
+                    <div className="bg-muted/30 p-4 rounded-lg border border-border block mb-4">
+                      <p className="whitespace-pre-wrap leading-relaxed text-foreground block">
+                        {qaResponse.answer}
+                      </p>
+                    </div>
                   )}
                 </div>
 
                 {qaResponse.citations && qaResponse.citations.length > 0 && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-                        <FileText className="h-4 w-4" />
-                        Sources ({qaResponse.citations.length})
-                      </h4>
-                      <div className="space-y-3">
-                        {qaResponse.citations.map((citation, index) => (
-                          <CitationCard key={index} citation={citation} />
-                        ))}
-                      </div>
+                  <div className="mt-8 space-y-4 block">
+                    <Separator className="my-6" />
+                    <h4 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                      <FileText className="h-4 w-4" />
+                      Sources ({qaResponse.citations.length})
+                    </h4>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {qaResponse.citations.map((citation, index) => (
+                        <CitationCard key={index} citation={citation} />
+                      ))}
                     </div>
-                  </>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -324,17 +330,17 @@ function SearchResultCard({ result }: { result: SearchResult }) {
 function CitationCard({ citation }: { citation: QAResponse["citations"][0] }) {
   return (
     <Link href={`/documents/${citation.documentId}${citation.pageNumber ? `?page=${citation.pageNumber}` : ""}`}>
-      <div className="p-3 rounded-lg bg-muted/50 hover-elevate cursor-pointer" data-testid={`citation-${citation.documentId}`}>
+      <div className="p-3 rounded-lg border bg-card hover-elevate cursor-pointer h-full transition-all" data-testid={`citation-${citation.documentId}`}>
         <div className="flex items-center gap-2 mb-2">
-          <FileText className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">{citation.documentTitle}</span>
+          <FileText className="h-3.5 w-3.5 text-primary" />
+          <span className="text-xs font-semibold truncate">{citation.documentTitle}</span>
           {citation.pageNumber && (
-            <Badge variant="secondary" className="text-xs">
-              Page {citation.pageNumber}
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+              P. {citation.pageNumber}
             </Badge>
           )}
         </div>
-        <p className="text-xs text-muted-foreground line-clamp-2 italic">
+        <p className="text-xs text-muted-foreground line-clamp-2 italic border-l-2 border-primary/20 pl-2">
           "{citation.excerpt}"
         </p>
       </div>
