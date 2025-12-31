@@ -167,9 +167,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async searchEmbeddings(query: string, limit = 10): Promise<Embedding[]> {
-    // Full-text search on chunk_text
-    return db.select().from(embeddings)
+    // Try full-text search first
+    const results = await db.select().from(embeddings)
       .where(sql`to_tsvector('english', ${embeddings.chunkText}) @@ plainto_tsquery('english', ${query})`)
+      .limit(limit);
+
+    if (results.length > 0) return results;
+
+    // Fallback to ILIKE search if no full-text results
+    return db.select().from(embeddings)
+      .where(ilike(embeddings.chunkText, `%${query}%`))
       .limit(limit);
   }
 

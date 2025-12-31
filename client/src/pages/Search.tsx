@@ -219,18 +219,18 @@ export default function SearchPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                {qaResponse.insufficientEvidence ? (
-                  <div className="p-4 rounded-lg bg-muted">
-                    <p className="text-sm text-muted-foreground">
-                      I cannot answer this question based on the uploaded documents. 
-                      The available information may not be sufficient or relevant to your query.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="prose prose-sm max-w-none dark:prose-invert" data-testid="text-answer">
+                <div className="prose prose-sm max-w-none dark:prose-invert" data-testid="text-answer">
+                  {qaResponse.insufficientEvidence ? (
+                    <div className="p-4 rounded-lg bg-muted border border-dashed border-muted-foreground/20">
+                      <p className="text-sm text-muted-foreground">
+                        I cannot answer this question based on the uploaded documents. 
+                        The available information may not be sufficient or relevant to your query.
+                      </p>
+                    </div>
+                  ) : (
                     <p className="whitespace-pre-wrap">{qaResponse.answer}</p>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {qaResponse.citations && qaResponse.citations.length > 0 && (
                   <>
