@@ -6,6 +6,7 @@ import fs from "fs";
 import { storage } from "./storage";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import Anthropic from "@anthropic-ai/sdk";
+import { PDFParse } from "pdf-parse";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -192,6 +193,39 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting document:", error);
       res.status(500).json({ error: "Failed to delete document" });
+    }
+  });
+
+  // Re-process document (re-extract text and re-classify)
+  app.post("/api/documents/:id/reprocess", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const document = await storage.getDocument(id);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      // Delete existing pages and embeddings for this document
+      await storage.deleteDocumentPages(id);
+      await storage.deleteDocumentEmbeddings(id);
+
+      // Reset document status
+      await storage.updateDocument(id, {
+        processingStatus: "pending",
+        fullText: null,
+        aiSummary: null,
+        keyTopics: null,
+        sentiment: null,
+        errorMessage: null,
+      });
+
+      // Start reprocessing in background
+      processDocument(id).catch(console.error);
+
+      res.json({ message: "Document reprocessing started", documentId: id });
+    } catch (error) {
+      console.error("Error reprocessing document:", error);
+      res.status(500).json({ error: "Failed to reprocess document" });
     }
   });
 
@@ -554,7 +588,7 @@ Respond with JSON:
           question,
           answer: response.answer,
           citations: response.citations,
-          documentIds: [...new Set(allContent.map(c => c.documentId))],
+          documentIds: Array.from(new Set(allContent.map(c => c.documentId))),
         });
 
         return res.json(response);
@@ -622,7 +656,7 @@ Respond with JSON:
         question,
         answer: response.answer,
         citations: response.citations,
-        documentIds: [...new Set(chunksWithDocs.map(c => c.documentId))],
+        documentIds: Array.from(new Set(chunksWithDocs.map(c => c.documentId))),
       });
 
       res.json(response);
@@ -654,47 +688,83 @@ async function processDocument(documentId: number) {
     const document = await storage.getDocument(documentId);
     if (!document) return;
 
-    // Get file from object storage
+    // Get file buffer from object storage
     const objectFile = await objectStorage.getObjectEntityFile(document.filePath);
-    const [metadata] = await objectFile.getMetadata();
+    const chunks: Buffer[] = [];
+    const downloadStream = objectFile.createReadStream();
     
-    // For now, simulate text extraction
-    // In production, you would use pdf-parse, xlsx, etc.
+    await new Promise<void>((resolve, reject) => {
+      downloadStream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      downloadStream.on("end", () => resolve());
+      downloadStream.on("error", reject);
+    });
+    
+    const fileBuffer = Buffer.concat(chunks);
+    
     let extractedText = "";
     let pageCount = 1;
+    const pageTexts: string[] = [];
 
-    // Create a simple text extraction simulation
-    // Real implementation would use pdf-parse, mammoth, xlsx, etc.
+    // Real PDF text extraction using pdf-parse v2
     if (document.fileType === "application/pdf") {
-      // Placeholder for PDF parsing
-      extractedText = "PDF content would be extracted here. This is a placeholder for the actual PDF text extraction which would use libraries like pdf-parse or PyMuPDF.";
-      pageCount = 1;
+      try {
+        const parser = new PDFParse({ data: fileBuffer });
+        const textResult = await parser.getText();
+        const info = await parser.getInfo();
+        
+        extractedText = textResult.text || "";
+        pageCount = info.total || 1;
+        
+        // Split text into roughly equal parts based on page count
+        if (extractedText.length > 0) {
+          const charsPerPage = Math.ceil(extractedText.length / pageCount);
+          for (let i = 0; i < pageCount; i++) {
+            const start = i * charsPerPage;
+            const end = Math.min((i + 1) * charsPerPage, extractedText.length);
+            pageTexts.push(extractedText.slice(start, end));
+          }
+        }
+        
+        console.log(`PDF parsed: ${pageCount} pages, ${extractedText.length} characters`);
+        
+        // Clean up parser resources
+        await parser.destroy();
+      } catch (pdfError) {
+        console.error("PDF parsing error:", pdfError);
+        extractedText = "Failed to extract PDF text. The document may be scanned or image-based.";
+        pageTexts.push(extractedText);
+      }
     } else if (document.fileType.includes("spreadsheet") || document.fileType.includes("excel")) {
-      extractedText = "Excel/CSV content would be extracted here.";
-      pageCount = 1;
+      extractedText = "Excel/CSV content extraction not yet implemented.";
+      pageTexts.push(extractedText);
     } else if (document.fileType.includes("image")) {
-      extractedText = "Image OCR text would be extracted here.";
-      pageCount = 1;
+      extractedText = "Image OCR not yet implemented.";
+      pageTexts.push(extractedText);
     } else {
-      extractedText = "Document content extraction placeholder.";
-      pageCount = 1;
+      extractedText = "Unsupported document type for text extraction.";
+      pageTexts.push(extractedText);
     }
 
-    // Create document page
-    await storage.createDocumentPage({
-      documentId,
-      pageNumber: 1,
-      pageText: extractedText,
-    });
-
-    // Create embedding/chunk for search
-    await storage.createEmbedding({
-      documentId,
-      pageNumber: 1,
-      chunkText: extractedText,
-      chunkIndex: 0,
-      tokenCount: Math.ceil(extractedText.length / 4),
-    });
+    // Create document pages for each page
+    for (let i = 0; i < pageTexts.length; i++) {
+      const pageText = pageTexts[i];
+      if (pageText.trim()) {
+        await storage.createDocumentPage({
+          documentId,
+          pageNumber: i + 1,
+          pageText: pageText,
+        });
+        
+        // Create embedding/chunk for search
+        await storage.createEmbedding({
+          documentId,
+          pageNumber: i + 1,
+          chunkText: pageText.slice(0, 2000), // Limit chunk size
+          chunkIndex: i,
+          tokenCount: Math.ceil(pageText.length / 4),
+        });
+      }
+    }
 
     // Classify document using AI
     let documentType = "other";

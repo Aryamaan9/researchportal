@@ -25,8 +25,22 @@ export default function DocumentsPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
+  // Build query URL with parameters
+  const buildQueryUrl = () => {
+    const params = new URLSearchParams();
+    if (typeFilter !== "all") params.set("type", typeFilter);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (searchQuery) params.set("search", searchQuery);
+    return `/api/documents${params.toString() ? `?${params.toString()}` : ""}`;
+  };
+
   const { data, isLoading } = useQuery<DocumentsResponse>({
-    queryKey: ["/api/documents", { search: searchQuery, type: typeFilter, status: statusFilter }],
+    queryKey: ["/api/documents", typeFilter, statusFilter, searchQuery],
+    queryFn: async () => {
+      const res = await fetch(buildQueryUrl(), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch documents");
+      return res.json();
+    },
   });
 
   const documents = data?.documents || [];
